@@ -9,23 +9,26 @@ func AppendFormatTime(buf *bytes.Buffer, t time.Time) {
 	year, month, day := t.Date()
 	hour, min, sec := t.Clock()
 
-	b := buf.AvailableBuffer()
+	var a [19]byte
+	a[0] = byte(year/1000) + '0'
+	a[1] = byte(year/100%10) + '0'
+	a[2] = byte(year/10%10) + '0'
+	a[3] = byte(year%10) + '0'
+	a[4] = '-'
+	a[5] = byte(month/10) + '0'
+	a[6] = byte(month%10) + '0'
+	a[7] = '-'
+	a[8] = byte(day/10) + '0'
+	a[9] = byte(day%10) + '0'
+	a[10] = ' '
+	a[11] = byte(hour/10) + '0'
+	a[12] = byte(hour%10) + '0'
+	a[13] = ':'
+	a[14] = byte(min/10) + '0'
+	a[15] = byte(min%10) + '0'
+	a[16] = ':'
+	a[17] = byte(sec/10) + '0'
+	a[18] = byte(sec%10) + '0'
 
-	b = append(b, byte(year/1000)+'0', byte(year/100%10)+'0', byte(year/10%10)+'0', byte(year%10)+'0')
-	b = append(b, '-')
-	b = append2Digits(b, int(month))
-	b = append(b, '-')
-	b = append2Digits(b, day)
-	b = append(b, ' ')
-	b = append2Digits(b, hour)
-	b = append(b, ':')
-	b = append2Digits(b, min)
-	b = append(b, ':')
-	b = append2Digits(b, sec)
-
-	buf.Write(b)
-}
-
-func append2Digits(b []byte, d int) []byte {
-	return append(b, byte(d/10)+'0', byte(d%10)+'0')
+	buf.Write(a[:])
 }
