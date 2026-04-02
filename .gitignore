@@ -1,0 +1,16 @@
+# Go binaries
+*.exe
+
+# Build output
+bin/
+obj/
+
+# Build cache
+*.exe
+*.out
+
+# Log files
+*.log
+
+# Zed config
+.zed/
