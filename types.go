@@ -6,6 +6,7 @@ import (
 	"io"
 	"os"
 	"strings"
+	"sync"
 )
 
 type LogLevel int
@@ -71,9 +72,13 @@ type Appender struct {
 	Format string `yaml:"format"`
 	writer io.Writer
 	file   *os.File
+	mu     sync.Mutex
 }
 
 func (a *Appender) Init() error {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+
 	switch a.Target {
 	case Stdout:
 		a.writer = os.Stdout
@@ -92,6 +97,9 @@ func (a *Appender) Init() error {
 }
 
 func (a *Appender) Write(p []byte) (n int, err error) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+
 	if a.file != nil && a.writer == nil {
 		return 0, fmt.Errorf("no writer for appender{target: %q, path: %q}", a.Target, a.Path)
 	}
@@ -100,6 +108,9 @@ func (a *Appender) Write(p []byte) (n int, err error) {
 }
 
 func (a *Appender) Close() error {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+
 	if a.file == nil {
 		return nil
 	}
@@ -109,6 +120,7 @@ func (a *Appender) Close() error {
 
 type MultiAppender struct {
 	Appenders []*Appender
+	mu        sync.Mutex
 }
 
 func NewMultiAppender(v ...*Appender) *MultiAppender {
@@ -120,6 +132,9 @@ func NewMultiAppender(v ...*Appender) *MultiAppender {
 }
 
 func (m *MultiAppender) Init() error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
 	var errs error
 	for _, a := range m.Appenders {
 		err := a.Init()
@@ -131,6 +146,9 @@ func (m *MultiAppender) Init() error {
 }
 
 func (m *MultiAppender) Write(p []byte) (int, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
 	var errs error
 	for _, a := range m.Appenders {
 		_, err := a.Write(p)
@@ -142,6 +160,9 @@ func (m *MultiAppender) Write(p []byte) (int, error) {
 }
 
 func (m *MultiAppender) Close() error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
 	var errs error
 	for _, a := range m.Appenders {
 		err := a.Close()

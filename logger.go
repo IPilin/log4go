@@ -130,7 +130,10 @@ func writeLogs(level string, packageName string, v ...any) {
 	fmt.Fprint(buf, v...)
 	buf.WriteByte('\n')
 
-	instance.ma.Write(buf.Bytes())
+	data := make([]byte, buf.Len())
+	copy(data, buf.Bytes())
+
+	go instance.ma.Write(data)
 }
 
 func writeLogsf(level string, packageName string, format string, v ...any) {
@@ -140,7 +143,10 @@ func writeLogsf(level string, packageName string, format string, v ...any) {
 	fmt.Fprintf(buf, format, v...)
 	buf.WriteByte('\n')
 
-	instance.ma.Write(buf.Bytes())
+	data := make([]byte, buf.Len())
+	copy(data, buf.Bytes())
+
+	go instance.ma.Write(data)
 }
 
 func writeDefault(level string, packageName string) *bytes.Buffer {
