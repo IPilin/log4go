@@ -4,18 +4,64 @@ import (
 	"bytes"
 	"fmt"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/IPilin/log4go/utils"
 )
 
 type appLogger struct {
-	level LogLevel
+	level atomic.Int32
 	ma    *MultiAppender
+	mu    sync.RWMutex
+}
+
+func (a *appLogger) Write(b []byte) (int, error) {
+	a.mu.RLock()
+	defer a.mu.RUnlock()
+	return a.ma.Write(b)
+}
+
+type logMap struct {
+	mu   sync.RWMutex
+	logs map[string](*Log)
+}
+
+func (m *logMap) get(key string) *Log {
+	m.mu.RLock()
+	log, ok := m.logs[key]
+	m.mu.RUnlock()
+
+	if ok {
+		return log
+	}
+
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	if log, ok := m.logs[key]; ok {
+		return log
+	}
+	log = &Log{packageName: key}
+
+	m.logs[key] = log
+	return log
 }
 
 var (
-	instance   *appLogger
+	instance = func() *appLogger {
+		a := &appLogger{
+			ma: NewMultiAppender(&Appender{
+				Target: Stdout,
+				Format: Text,
+			}),
+		}
+		a.level.Store(int32(InfoLevel))
+		return a
+	}()
+	logs logMap = logMap{
+		logs: make(map[string](*Log)),
+	}
 	bufferPool = sync.Pool{
 		New: func() any {
 			return new(bytes.Buffer)
@@ -23,104 +69,109 @@ var (
 	}
 )
 
-func Init(config *LogConfig) (err error) {
-	config, err = initConfig(config)
+func Init(config *LogConfig) error {
+	config, err := initConfig(config)
 	if err != nil {
 		return err
 	}
 
+	instance.mu.Lock()
+	defer instance.mu.Unlock()
+
 	ma := NewMultiAppender(config.Outputs...)
 
-	instance = &appLogger{
-		level: config.Level,
-		ma:    ma,
-	}
+	instance.level.Store(int32(config.Level))
+	instance.ma = ma
 
 	return nil
 }
 
 type Log struct {
-	PackageName string
+	packageName string
+}
+
+func GetLog(packageName string) *Log {
+	return logs.get(packageName)
 }
 
 func (l *Log) Trace(v ...any) {
-	if instance.level > TraceLevel {
+	if LogLevel(instance.level.Load()) > TraceLevel {
 		return
 	}
 
-	writeLogs("TRACE", l.PackageName, v...)
+	writeLogs("TRACE", l.packageName, v...)
 }
 
 func (l *Log) Tracef(format string, v ...any) {
-	if instance.level > TraceLevel {
+	if LogLevel(instance.level.Load()) > TraceLevel {
 		return
 	}
 
-	writeLogsf("TRACE", l.PackageName, format, v...)
+	writeLogsf("TRACE", l.packageName, format, v...)
 }
 
 func (l *Log) Debug(v ...any) {
-	if instance.level > DebugLevel {
+	if LogLevel(instance.level.Load()) > DebugLevel {
 		return
 	}
 
-	writeLogs("DEBUG", l.PackageName, v...)
+	writeLogs("DEBUG", l.packageName, v...)
 }
 
 func (l *Log) Debugf(format string, v ...any) {
-	if instance.level > DebugLevel {
+	if LogLevel(instance.level.Load()) > DebugLevel {
 		return
 	}
 
-	writeLogsf("DEBUG", l.PackageName, format, v...)
+	writeLogsf("DEBUG", l.packageName, format, v...)
 }
 
 func (l *Log) Info(v ...any) {
-	if instance.level > InfoLevel {
+	if LogLevel(instance.level.Load()) > InfoLevel {
 		return
 	}
 
-	writeLogs("INFO", l.PackageName, v...)
+	writeLogs("INFO", l.packageName, v...)
 }
 
 func (l *Log) Infof(format string, v ...any) {
-	if instance.level > InfoLevel {
+	if LogLevel(instance.level.Load()) > InfoLevel {
 		return
 	}
 
-	writeLogsf("INFO", l.PackageName, format, v...)
+	writeLogsf("INFO", l.packageName, format, v...)
 }
 
 func (l *Log) Warn(v ...any) {
-	if instance.level > WarnLevel {
+	if LogLevel(instance.level.Load()) > WarnLevel {
 		return
 	}
 
-	writeLogs("WARN", l.PackageName, v...)
+	writeLogs("WARN", l.packageName, v...)
 }
 
 func (l *Log) Warnf(format string, v ...any) {
-	if instance.level > WarnLevel {
+	if LogLevel(instance.level.Load()) > WarnLevel {
 		return
 	}
 
-	writeLogsf("WARN", l.PackageName, format, v...)
+	writeLogsf("WARN", l.packageName, format, v...)
 }
 
 func (l *Log) Error(v ...any) {
-	if instance.level > ErrorLevel {
+	if LogLevel(instance.level.Load()) > ErrorLevel {
 		return
 	}
 
-	writeLogs("ERROR", l.PackageName, v...)
+	writeLogs("ERROR", l.packageName, v...)
 }
 
 func (l *Log) Errorf(format string, v ...any) {
-	if instance.level > ErrorLevel {
+	if LogLevel(instance.level.Load()) > ErrorLevel {
 		return
 	}
 
-	writeLogsf("ERROR", l.PackageName, format, v...)
+	writeLogsf("ERROR", l.packageName, format, v...)
 }
 
 func writeLogs(level string, packageName string, v ...any) {
@@ -133,7 +184,7 @@ func writeLogs(level string, packageName string, v ...any) {
 	data := make([]byte, buf.Len())
 	copy(data, buf.Bytes())
 
-	go instance.ma.Write(data)
+	go instance.Write(data)
 }
 
 func writeLogsf(level string, packageName string, format string, v ...any) {
@@ -146,7 +197,7 @@ func writeLogsf(level string, packageName string, format string, v ...any) {
 	data := make([]byte, buf.Len())
 	copy(data, buf.Bytes())
 
-	go instance.ma.Write(data)
+	go instance.Write(data)
 }
 
 func writeDefault(level string, packageName string) *bytes.Buffer {

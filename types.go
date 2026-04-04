@@ -25,22 +25,24 @@ func (l *LogLevel) UnmarshalYAML(unmarshal func(any) error) error {
 		return err
 	}
 
+	var level LogLevel
 	switch strings.ToUpper(s) {
 	case "TRACE":
-		*l = TraceLevel
+		level = TraceLevel
 	case "DEBUG":
-		*l = DebugLevel
+		level = DebugLevel
 	case "INFO":
-		*l = InfoLevel
+		level = InfoLevel
 	case "WARN":
-		*l = WarnLevel
+		level = WarnLevel
 	case "ERROR":
-		*l = ErrorLevel
+		level = ErrorLevel
 	default:
-		*l = InfoLevel
+		level = InfoLevel
 		fmt.Printf("log4go: unknown level %q, falling back to INFO\n", s)
 	}
 
+	l = &level
 	return nil
 }
 
