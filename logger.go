@@ -77,9 +77,14 @@ func Init(config *LogConfig) error {
 	defer instance.mu.Unlock()
 
 	ma := NewMultiAppender(config.Outputs...)
+	oldMa := instance.ma
 
 	instance.level.Store(int32(config.Level))
 	instance.ma = ma
+
+	if oldMa != nil {
+		oldMa.Close()
+	}
 
 	return nil
 }
