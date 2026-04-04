@@ -8,6 +8,13 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
+type LogConfig struct {
+	ConfigPath string
+	HotReload  bool        `yaml:"hot_reload"`
+	Level      LogLevel    `yaml:"level"`
+	Outputs    []*Appender `yaml:"outputs"`
+}
+
 func initConfig(config *LogConfig) (*LogConfig, error) {
 	var err error
 	if config.ConfigPath != "" {

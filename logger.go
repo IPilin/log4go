@@ -6,8 +6,6 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
-
-	"github.com/IPilin/log4go/utils"
 )
 
 type appLogger struct {
@@ -204,7 +202,7 @@ func writeDefault(level string, packageName string) *bytes.Buffer {
 	buf := bufferPool.Get().(*bytes.Buffer)
 	buf.Reset()
 
-	utils.AppendFormatTime(buf, time.Now())
+	appendFormatTime(buf, time.Now())
 	buf.WriteByte(' ')
 	buf.WriteString(level)
 	buf.WriteByte(' ')
