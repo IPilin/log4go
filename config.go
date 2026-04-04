@@ -26,10 +26,10 @@ func initConfig(config *LogConfig) (*LogConfig, error) {
 
 	if len(config.Outputs) == 0 {
 		config.Outputs = append(config.Outputs, &Appender{
-			Target: Stdout,
-			Format: Text,
+			Target: TargetStdout,
+			Format: FormatText,
 		})
-		fmt.Printf("log4go: outputs are empty, using default output: %q\n", Stdout)
+		fmt.Printf("log4go: outputs are empty, using default output: %q\n", TargetStdout)
 	}
 
 	return config, err

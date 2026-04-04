@@ -8,25 +8,25 @@ import (
 	"sync"
 )
 
-type OutputFormat = string
+type OutputFormat string
 
 const (
-	Text OutputFormat = "Text"
-	Json OutputFormat = "Json"
+	FormatText OutputFormat = "Text"
+	FormatJson OutputFormat = "Json"
 )
 
-type Target = string
+type Target string
 
 const (
-	Stdout Target = "stdout"
-	Stderr Target = "stderr"
-	File   Target = "file"
+	TargetStdout Target = "stdout"
+	TargetStderr Target = "stderr"
+	TargetFile   Target = "file"
 )
 
 type Appender struct {
-	Target Target `yaml:"target"`
-	Path   string `yaml:"path"`
-	Format string `yaml:"format"`
+	Target Target       `yaml:"target"`
+	Path   string       `yaml:"path"`
+	Format OutputFormat `yaml:"format"`
 	writer io.Writer
 	file   *os.File
 	mu     sync.Mutex
@@ -37,11 +37,11 @@ func (a *Appender) Init() error {
 	defer a.mu.Unlock()
 
 	switch a.Target {
-	case Stdout:
+	case TargetStdout:
 		a.writer = os.Stdout
-	case Stderr:
+	case TargetStderr:
 		a.writer = os.Stderr
-	case File:
+	case TargetFile:
 		file, err := os.OpenFile(a.Path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
 		if err != nil {
 			return err

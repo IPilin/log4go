@@ -7,7 +7,7 @@ import (
 )
 
 func TestAppender_Init_StandardStreams(t *testing.T) {
-	appStdout := &Appender{Target: Stdout}
+	appStdout := &Appender{Target: TargetStdout}
 	if err := appStdout.Init(); err != nil {
 		t.Fatalf("unexpected error initializing stdout appender: %v", err)
 	}
@@ -15,7 +15,7 @@ func TestAppender_Init_StandardStreams(t *testing.T) {
 		t.Errorf("expected writer to be os.Stdout")
 	}
 
-	appStderr := &Appender{Target: Stderr}
+	appStderr := &Appender{Target: TargetStderr}
 	if err := appStderr.Init(); err != nil {
 		t.Fatalf("unexpected error initializing stderr appender: %v", err)
 	}
@@ -28,7 +28,7 @@ func TestAppender_File_Lifecycle(t *testing.T) {
 	tmpFile := filepath.Join(t.TempDir(), "test.log")
 
 	appender := &Appender{
-		Target: File,
+		Target: TargetFile,
 		Path:   tmpFile,
 	}
 
@@ -70,7 +70,7 @@ func TestAppender_File_Lifecycle(t *testing.T) {
 
 func TestAppender_Init_File_Error(t *testing.T) {
 	appender := &Appender{
-		Target: File,
+		Target: TargetFile,
 		Path:   filepath.Join("invalid", "directory", "path", "that", "does", "not", "exist.log"),
 	}
 
@@ -82,7 +82,7 @@ func TestAppender_Init_File_Error(t *testing.T) {
 
 func TestAppender_Write_NoWriterError(t *testing.T) {
 	appender := &Appender{
-		Target: File,
+		Target: TargetFile,
 		Path:   "dummy.log",
 		file:   &os.File{}, // force file != nil
 		writer: nil,        // force writer == nil
@@ -99,8 +99,8 @@ func TestMultiAppender_Lifecycle(t *testing.T) {
 	file1 := filepath.Join(tmpDir, "log1.log")
 	file2 := filepath.Join(tmpDir, "log2.log")
 
-	appender1 := &Appender{Target: File, Path: file1}
-	appender2 := &Appender{Target: File, Path: file2}
+	appender1 := &Appender{Target: TargetFile, Path: file1}
+	appender2 := &Appender{Target: TargetFile, Path: file2}
 
 	ma := NewMultiAppender(appender1, appender2)
 
@@ -133,11 +133,11 @@ func TestMultiAppender_Lifecycle(t *testing.T) {
 
 func TestMultiAppender_Errors(t *testing.T) {
 	invalidAppender := &Appender{
-		Target: File,
+		Target: TargetFile,
 		Path:   filepath.Join("invalid", "path", "1.log"),
 	}
 	invalidAppender2 := &Appender{
-		Target: File,
+		Target: TargetFile,
 		Path:   filepath.Join("invalid", "path", "2.log"),
 	}
 
@@ -148,7 +148,7 @@ func TestMultiAppender_Errors(t *testing.T) {
 	}
 
 	// Write error
-	badWriteAppender := &Appender{Target: File, Path: "dummy.log", file: &os.File{}, writer: nil}
+	badWriteAppender := &Appender{Target: TargetFile, Path: "dummy.log", file: &os.File{}, writer: nil}
 	maWrite := &MultiAppender{Appenders: []*Appender{badWriteAppender}}
 	if _, err := maWrite.Write([]byte("test")); err == nil {
 		t.Error("expected error from MultiAppender.Write, got nil")
@@ -158,7 +158,7 @@ func TestMultiAppender_Errors(t *testing.T) {
 	tempFile, _ := os.CreateTemp("", "test-close")
 	tempFile.Close() // close immediately
 
-	badCloseAppender := &Appender{Target: File, file: tempFile}
+	badCloseAppender := &Appender{Target: TargetFile, file: tempFile}
 	maClose := &MultiAppender{Appenders: []*Appender{badCloseAppender}}
 	if err := maClose.Close(); err == nil {
 		t.Error("expected error from MultiAppender.Close, got nil")

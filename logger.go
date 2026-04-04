@@ -50,8 +50,8 @@ var (
 	instance = func() *appLogger {
 		a := &appLogger{
 			ma: NewMultiAppender(&Appender{
-				Target: Stdout,
-				Format: Text,
+				Target: TargetStdout,
+				Format: FormatText,
 			}),
 		}
 		a.level.Store(int32(InfoLevel))
