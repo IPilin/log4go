@@ -102,7 +102,10 @@ func TestMultiAppender_Lifecycle(t *testing.T) {
 	appender1 := &Appender{Target: TargetFile, Path: file1}
 	appender2 := &Appender{Target: TargetFile, Path: file2}
 
-	ma := NewMultiAppender(appender1, appender2)
+	ma, err := NewMultiAppender(appender1, appender2)
+	if err != nil {
+		t.Fatalf("Create MultiAppender failed: %v", err)
+	}
 
 	// Test Write
 	msg := []byte("multi-appender test")
@@ -142,14 +145,14 @@ func TestMultiAppender_Errors(t *testing.T) {
 	}
 
 	// Init error
-	maInit := &MultiAppender{Appenders: []*Appender{invalidAppender, invalidAppender2}}
+	maInit, _ := NewMultiAppender(invalidAppender, invalidAppender2)
 	if err := maInit.Init(); err == nil {
 		t.Error("expected error from MultiAppender.Init, got nil")
 	}
 
 	// Write error
 	badWriteAppender := &Appender{Target: TargetFile, Path: "dummy.log", file: &os.File{}, writer: nil}
-	maWrite := &MultiAppender{Appenders: []*Appender{badWriteAppender}}
+	maWrite, _ := NewMultiAppender(badWriteAppender)
 	if _, err := maWrite.Write([]byte("test")); err == nil {
 		t.Error("expected error from MultiAppender.Write, got nil")
 	}
@@ -159,7 +162,7 @@ func TestMultiAppender_Errors(t *testing.T) {
 	tempFile.Close() // close immediately
 
 	badCloseAppender := &Appender{Target: TargetFile, file: tempFile}
-	maClose := &MultiAppender{Appenders: []*Appender{badCloseAppender}}
+	maClose, _ := NewMultiAppender(badCloseAppender)
 	if err := maClose.Close(); err == nil {
 		t.Error("expected error from MultiAppender.Close, got nil")
 	}

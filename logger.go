@@ -49,10 +49,14 @@ func (m *logMap) get(key string) *Log {
 var (
 	instance = func() *appLogger {
 		a := &appLogger{
-			ma: NewMultiAppender(&Appender{
-				Target: TargetStdout,
-				Format: FormatText,
-			}),
+			ma: func() *MultiAppender {
+				ma, _ := NewMultiAppender(&Appender{
+					Target: TargetStdout,
+					Format: FormatText,
+				})
+				ma.Init()
+				return ma
+			}(),
 		}
 		a.level.Store(int32(InfoLevel))
 		return a
@@ -76,15 +80,13 @@ func Init(config *LogConfig) error {
 	instance.mu.Lock()
 	defer instance.mu.Unlock()
 
-	ma := NewMultiAppender(config.Outputs...)
-	oldMa := instance.ma
-
-	instance.level.Store(int32(config.Level))
-	instance.ma = ma
-
-	if oldMa != nil {
-		oldMa.Close()
+	ma, err := NewMultiAppender(config.Outputs...)
+	if err != nil {
+		return err
 	}
+
+	instance.ma.Update(ma)
+	instance.level.Store(int32(config.Level))
 
 	return nil
 }
