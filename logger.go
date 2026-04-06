@@ -2,6 +2,7 @@ package log4go
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
 	"sync"
 	"sync/atomic"
@@ -10,14 +11,11 @@ import (
 
 type appLogger struct {
 	level atomic.Int32
-	ma    *MultiAppender
-	mu    sync.RWMutex
+	ma    atomic.Pointer[MultiAppender]
 }
 
 func (a *appLogger) Write(b []byte) (int, error) {
-	a.mu.RLock()
-	defer a.mu.RUnlock()
-	return a.ma.Write(b)
+	return a.ma.Load().Write(b)
 }
 
 type logMap struct {
@@ -48,16 +46,15 @@ func (m *logMap) get(key string) *Log {
 
 var (
 	instance = func() *appLogger {
-		a := &appLogger{
-			ma: func() *MultiAppender {
-				ma, _ := NewMultiAppender(&Appender{
-					Target: TargetStdout,
-					Format: FormatText,
-				})
-				ma.Init()
-				return ma
-			}(),
-		}
+		a := &appLogger{}
+
+		ma, _ := NewMultiAppender(&Appender{
+			Target: TargetStdout,
+			Format: FormatText,
+		})
+		ma.Init()
+
+		a.ma.Store(ma)
 		a.level.Store(int32(InfoLevel))
 		return a
 	}()
@@ -77,16 +74,46 @@ func Init(config *LogConfig) error {
 		return err
 	}
 
-	instance.mu.Lock()
-	defer instance.mu.Unlock()
-
 	ma, err := NewMultiAppender(config.Outputs...)
 	if err != nil {
 		return err
 	}
 
-	instance.ma.Update(ma)
+	var errs error
+	var newAppenders = make(map[string](*Appender))
+	for key, val := range ma.Appenders {
+		if oldApp, ok := instance.ma.Load().Appenders[key]; ok {
+			val.file = oldApp.file
+			val.writer = oldApp.writer
+			continue
+		}
+
+		if err := val.Init(); err != nil {
+			errs = errors.Join(errs, err)
+			continue
+		}
+
+		newAppenders[key] = val
+	}
+
+	if errs != nil {
+		for _, val := range newAppenders {
+			val.Close()
+		}
+		return errs
+	}
+
+	oldMa := instance.ma.Load()
+
+	instance.ma.Store(ma)
 	instance.level.Store(int32(config.Level))
+
+	for key, val := range oldMa.Appenders {
+		if _, ok := ma.Appenders[key]; ok {
+			continue
+		}
+		val.Close()
+	}
 
 	return nil
 }
@@ -189,7 +216,7 @@ func writeLogs(level string, packageName string, v ...any) {
 	data := make([]byte, buf.Len())
 	copy(data, buf.Bytes())
 
-	go instance.Write(data)
+	instance.Write(data)
 }
 
 func writeLogsf(level string, packageName string, format string, v ...any) {
@@ -202,7 +229,7 @@ func writeLogsf(level string, packageName string, format string, v ...any) {
 	data := make([]byte, buf.Len())
 	copy(data, buf.Bytes())
 
-	go instance.Write(data)
+	instance.Write(data)
 }
 
 func writeDefault(level string, packageName string) *bytes.Buffer {

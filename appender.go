@@ -56,6 +56,10 @@ func (a *Appender) Init() error {
 	return nil
 }
 
+func (a *Appender) Key() string {
+	return a.Path + string(a.Target) + string(a.Format)
+}
+
 // Write bytes to Target
 func (a *Appender) Write(p []byte) (n int, err error) {
 	a.mu.Lock()
@@ -79,23 +83,17 @@ func (a *Appender) Close() error {
 
 type MultiAppender struct {
 	Appenders map[string](*Appender)
-	mu        sync.RWMutex
 }
 
 func NewMultiAppender(v ...*Appender) (*MultiAppender, error) {
-	ma := &MultiAppender{
-		Appenders: func(v ...*Appender) map[string](*Appender) {
-			a := make(map[string](*Appender))
-			for _, val := range v {
-				if len(val.Path) == 0 {
-					a[string(val.Target)] = val
-				} else {
-					a[val.Path] = val
-				}
-			}
-			return a
-		}(v...),
+	ma := &MultiAppender{}
+
+	a := make(map[string](*Appender))
+	for _, val := range v {
+		a[val.Key()] = val
 	}
+	ma.Appenders = a
+
 	if err := ma.Init(); err != nil {
 		return nil, err
 	}
@@ -103,9 +101,6 @@ func NewMultiAppender(v ...*Appender) (*MultiAppender, error) {
 }
 
 func (m *MultiAppender) Init() error {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-
 	var errs error
 	for _, a := range m.Appenders {
 		err := a.Init()
@@ -116,38 +111,7 @@ func (m *MultiAppender) Init() error {
 	return errs
 }
 
-func (m *MultiAppender) Update(newMa *MultiAppender) error {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-
-	for key, val := range newMa.Appenders {
-		if _, ok := m.Appenders[key]; ok {
-			continue
-		}
-		if err := val.Init(); err != nil {
-			newMa.Close()
-			return err
-		}
-		m.Appenders[key] = val
-	}
-
-	var errs error
-	for key, val := range m.Appenders {
-		if _, ok := newMa.Appenders[key]; ok {
-			continue
-		}
-		if err := val.Close(); err != nil {
-			errs = errors.Join(errs, err)
-		}
-		delete(m.Appenders, key)
-	}
-	return errs
-}
-
 func (m *MultiAppender) Write(p []byte) (int, error) {
-	m.mu.RLock()
-	defer m.mu.RUnlock()
-
 	var errs error
 	for _, a := range m.Appenders {
 		_, err := a.Write(p)
@@ -159,9 +123,6 @@ func (m *MultiAppender) Write(p []byte) (int, error) {
 }
 
 func (m *MultiAppender) Close() error {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-
 	var errs error
 	for _, a := range m.Appenders {
 		err := a.Close()
