@@ -4,18 +4,36 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
+	"os"
 	"sync"
 	"sync/atomic"
 	"time"
 )
 
 type appLogger struct {
-	level atomic.Int32
-	ma    atomic.Pointer[MultiAppender]
+	level     atomic.Int32
+	ma        atomic.Pointer[MultiAppender]
+	logTunnel chan []byte
+	errTunnel chan error
+	stop      chan struct{}
 }
 
 func (a *appLogger) Write(b []byte) (int, error) {
-	return a.ma.Load().Write(b)
+	select {
+	case a.logTunnel <- b:
+		return len(b), nil
+	default:
+		return 0, fmt.Errorf("log tunnel overflow, message dropped: %q", string(b))
+	}
+}
+
+func Close() error {
+	err := instance.ma.Load().Close()
+	close(instance.logTunnel)
+	close(instance.errTunnel)
+	<-instance.stop
+	<-instance.stop
+	return err
 }
 
 type logMap struct {
@@ -56,6 +74,14 @@ var (
 
 		a.ma.Store(ma)
 		a.level.Store(int32(InfoLevel))
+
+		a.logTunnel = make(chan []byte, 1024)
+		a.errTunnel = make(chan error, 100)
+		a.stop = make(chan struct{}, 2)
+
+		go bootstrapWriter(a)
+		go bootstrapError(a)
+
 		return a
 	}()
 	logs logMap = logMap{
@@ -118,6 +144,27 @@ func Init(config *LogConfig) error {
 	return nil
 }
 
+func bootstrapWriter(app *appLogger) {
+	for b := range app.logTunnel {
+		_, err := app.ma.Load().Write(b)
+		if err != nil {
+			select {
+			case app.errTunnel <- err:
+			default:
+				fmt.Fprintf(os.Stderr, "log4go: error tunnel overflow, message dropped: %q", err)
+			}
+		}
+	}
+	app.stop <- struct{}{}
+}
+
+func bootstrapError(app *appLogger) {
+	for err := range app.errTunnel {
+		fmt.Fprintf(os.Stderr, "log4go: Error - %q", err)
+	}
+	app.stop <- struct{}{}
+}
+
 type Log struct {
 	packageName string
 }
@@ -126,87 +173,87 @@ func GetLog(packageName string) *Log {
 	return logs.get(packageName)
 }
 
-func (l *Log) Trace(v ...any) {
+func (l *Log) Trace(v ...any) (int, error) {
 	if LogLevel(instance.level.Load()) > TraceLevel {
-		return
+		return 0, nil
 	}
 
-	writeLogs("TRACE", l.packageName, v...)
+	return writeLogs("TRACE", l.packageName, v...)
 }
 
-func (l *Log) Tracef(format string, v ...any) {
+func (l *Log) Tracef(format string, v ...any) (int, error) {
 	if LogLevel(instance.level.Load()) > TraceLevel {
-		return
+		return 0, nil
 	}
 
-	writeLogsf("TRACE", l.packageName, format, v...)
+	return writeLogsf("TRACE", l.packageName, format, v...)
 }
 
-func (l *Log) Debug(v ...any) {
+func (l *Log) Debug(v ...any) (int, error) {
 	if LogLevel(instance.level.Load()) > DebugLevel {
-		return
+		return 0, nil
 	}
 
-	writeLogs("DEBUG", l.packageName, v...)
+	return writeLogs("DEBUG", l.packageName, v...)
 }
 
-func (l *Log) Debugf(format string, v ...any) {
+func (l *Log) Debugf(format string, v ...any) (int, error) {
 	if LogLevel(instance.level.Load()) > DebugLevel {
-		return
+		return 0, nil
 	}
 
-	writeLogsf("DEBUG", l.packageName, format, v...)
+	return writeLogsf("DEBUG", l.packageName, format, v...)
 }
 
-func (l *Log) Info(v ...any) {
+func (l *Log) Info(v ...any) (int, error) {
 	if LogLevel(instance.level.Load()) > InfoLevel {
-		return
+		return 0, nil
 	}
 
-	writeLogs("INFO", l.packageName, v...)
+	return writeLogs("INFO", l.packageName, v...)
 }
 
-func (l *Log) Infof(format string, v ...any) {
+func (l *Log) Infof(format string, v ...any) (int, error) {
 	if LogLevel(instance.level.Load()) > InfoLevel {
-		return
+		return 0, nil
 	}
 
-	writeLogsf("INFO", l.packageName, format, v...)
+	return writeLogsf("INFO", l.packageName, format, v...)
 }
 
-func (l *Log) Warn(v ...any) {
+func (l *Log) Warn(v ...any) (int, error) {
 	if LogLevel(instance.level.Load()) > WarnLevel {
-		return
+		return 0, nil
 	}
 
-	writeLogs("WARN", l.packageName, v...)
+	return writeLogs("WARN", l.packageName, v...)
 }
 
-func (l *Log) Warnf(format string, v ...any) {
+func (l *Log) Warnf(format string, v ...any) (int, error) {
 	if LogLevel(instance.level.Load()) > WarnLevel {
-		return
+		return 0, nil
 	}
 
-	writeLogsf("WARN", l.packageName, format, v...)
+	return writeLogsf("WARN", l.packageName, format, v...)
 }
 
-func (l *Log) Error(v ...any) {
+func (l *Log) Error(v ...any) (int, error) {
 	if LogLevel(instance.level.Load()) > ErrorLevel {
-		return
+		return 0, nil
 	}
 
-	writeLogs("ERROR", l.packageName, v...)
+	return writeLogs("ERROR", l.packageName, v...)
 }
 
-func (l *Log) Errorf(format string, v ...any) {
+func (l *Log) Errorf(format string, v ...any) (int, error) {
 	if LogLevel(instance.level.Load()) > ErrorLevel {
-		return
+		return 0, nil
 	}
 
-	writeLogsf("ERROR", l.packageName, format, v...)
+	return writeLogsf("ERROR", l.packageName, format, v...)
 }
 
-func writeLogs(level string, packageName string, v ...any) {
+func writeLogs(level string, packageName string, v ...any) (int, error) {
 	buf := writeDefault(level, packageName)
 	defer bufferPool.Put(buf)
 
@@ -216,10 +263,10 @@ func writeLogs(level string, packageName string, v ...any) {
 	data := make([]byte, buf.Len())
 	copy(data, buf.Bytes())
 
-	instance.Write(data)
+	return instance.Write(data)
 }
 
-func writeLogsf(level string, packageName string, format string, v ...any) {
+func writeLogsf(level string, packageName string, format string, v ...any) (int, error) {
 	buf := writeDefault(level, packageName)
 	defer bufferPool.Put(buf)
 
@@ -229,7 +276,7 @@ func writeLogsf(level string, packageName string, format string, v ...any) {
 	data := make([]byte, buf.Len())
 	copy(data, buf.Bytes())
 
-	instance.Write(data)
+	return instance.Write(data)
 }
 
 func writeDefault(level string, packageName string) *bytes.Buffer {
