@@ -10,20 +10,36 @@ import (
 	"time"
 )
 
+type Record struct {
+	Time        time.Time
+	Level       string
+	PackageName string
+	Format      string
+	Data        []any
+}
+
+type Appender interface {
+	Init() error
+	Key() string
+	Write(*Record) error
+	Close() error
+	Copy(*Appender) error
+}
+
 type appLogger struct {
 	level     atomic.Int32
 	ma        atomic.Pointer[MultiAppender]
-	logTunnel chan []byte
+	logTunnel chan *Record
 	errTunnel chan error
 	stop      chan struct{}
 }
 
-func (a *appLogger) Write(b []byte) (int, error) {
+func (a *appLogger) Write(r *Record) error {
 	select {
-	case a.logTunnel <- b:
-		return len(b), nil
+	case a.logTunnel <- r:
+		return nil
 	default:
-		return 0, fmt.Errorf("log tunnel overflow, message dropped: %q", string(b))
+		return fmt.Errorf("log tunnel overflow, message dropped: %q", r)
 	}
 }
 
@@ -66,16 +82,18 @@ var (
 	instance = func() *appLogger {
 		a := &appLogger{}
 
-		ma, _ := NewMultiAppender(&Appender{
+		ma, _ := NewMultiAppender(&AppenderConfig{
+			Type:   AppenderTypeConsole,
 			Target: TargetStdout,
 			Format: FormatText,
 		})
+
 		ma.Init()
 
 		a.ma.Store(ma)
 		a.level.Store(int32(InfoLevel))
 
-		a.logTunnel = make(chan []byte, 1024)
+		a.logTunnel = make(chan *Record, 1024)
 		a.errTunnel = make(chan error, 100)
 		a.stop = make(chan struct{}, 2)
 
@@ -106,11 +124,10 @@ func Init(config *LogConfig) error {
 	}
 
 	var errs error
-	var newAppenders = make(map[string](*Appender))
+	var newAppenders = make(map[string](Appender))
 	for key, val := range ma.Appenders {
 		if oldApp, ok := instance.ma.Load().Appenders[key]; ok {
-			val.file = oldApp.file
-			val.writer = oldApp.writer
+			ma.Appenders[key] = oldApp
 			continue
 		}
 
@@ -145,8 +162,8 @@ func Init(config *LogConfig) error {
 }
 
 func bootstrapWriter(app *appLogger) {
-	for b := range app.logTunnel {
-		_, err := app.ma.Load().Write(b)
+	for r := range app.logTunnel {
+		err := app.ma.Load().Write(r)
 		if err != nil {
 			select {
 			case app.errTunnel <- err:
@@ -173,110 +190,125 @@ func GetLog(packageName string) *Log {
 	return logs.get(packageName)
 }
 
-func (l *Log) Trace(v ...any) (int, error) {
+func (l *Log) Trace(v ...any) error {
 	if LogLevel(instance.level.Load()) > TraceLevel {
-		return 0, nil
+		return nil
 	}
 
 	return writeLogs("TRACE", l.packageName, v...)
 }
 
-func (l *Log) Tracef(format string, v ...any) (int, error) {
+func (l *Log) Tracef(format string, v ...any) error {
 	if LogLevel(instance.level.Load()) > TraceLevel {
-		return 0, nil
+		return nil
 	}
 
 	return writeLogsf("TRACE", l.packageName, format, v...)
 }
 
-func (l *Log) Debug(v ...any) (int, error) {
+func (l *Log) Debug(v ...any) error {
 	if LogLevel(instance.level.Load()) > DebugLevel {
-		return 0, nil
+		return nil
 	}
 
 	return writeLogs("DEBUG", l.packageName, v...)
 }
 
-func (l *Log) Debugf(format string, v ...any) (int, error) {
+func (l *Log) Debugf(format string, v ...any) error {
 	if LogLevel(instance.level.Load()) > DebugLevel {
-		return 0, nil
+		return nil
 	}
 
 	return writeLogsf("DEBUG", l.packageName, format, v...)
 }
 
-func (l *Log) Info(v ...any) (int, error) {
+func (l *Log) Info(v ...any) error {
 	if LogLevel(instance.level.Load()) > InfoLevel {
-		return 0, nil
+		return nil
 	}
 
 	return writeLogs("INFO", l.packageName, v...)
 }
 
-func (l *Log) Infof(format string, v ...any) (int, error) {
+func (l *Log) Infof(format string, v ...any) error {
 	if LogLevel(instance.level.Load()) > InfoLevel {
-		return 0, nil
+		return nil
 	}
 
 	return writeLogsf("INFO", l.packageName, format, v...)
 }
 
-func (l *Log) Warn(v ...any) (int, error) {
+func (l *Log) Warn(v ...any) error {
 	if LogLevel(instance.level.Load()) > WarnLevel {
-		return 0, nil
+		return nil
 	}
 
 	return writeLogs("WARN", l.packageName, v...)
 }
 
-func (l *Log) Warnf(format string, v ...any) (int, error) {
+func (l *Log) Warnf(format string, v ...any) error {
 	if LogLevel(instance.level.Load()) > WarnLevel {
-		return 0, nil
+		return nil
 	}
 
 	return writeLogsf("WARN", l.packageName, format, v...)
 }
 
-func (l *Log) Error(v ...any) (int, error) {
+func (l *Log) Error(v ...any) error {
 	if LogLevel(instance.level.Load()) > ErrorLevel {
-		return 0, nil
+		return nil
 	}
 
 	return writeLogs("ERROR", l.packageName, v...)
 }
 
-func (l *Log) Errorf(format string, v ...any) (int, error) {
+func (l *Log) Errorf(format string, v ...any) error {
 	if LogLevel(instance.level.Load()) > ErrorLevel {
-		return 0, nil
+		return nil
 	}
 
 	return writeLogsf("ERROR", l.packageName, format, v...)
 }
 
-func writeLogs(level string, packageName string, v ...any) (int, error) {
-	buf := writeDefault(level, packageName)
-	defer bufferPool.Put(buf)
+func writeLogs(level string, packageName string, v ...any) error {
+	// buf := writeDefault(level, packageName)
+	// defer bufferPool.Put(buf)
 
-	fmt.Fprint(buf, v...)
-	buf.WriteByte('\n')
+	// fmt.Fprint(buf, v...)
+	// buf.WriteByte('\n')
 
-	data := make([]byte, buf.Len())
-	copy(data, buf.Bytes())
+	// data := make([]byte, buf.Len())
+	// copy(data, buf.Bytes())
 
-	return instance.Write(data)
+	r := Record{
+		Time:        time.Now(),
+		Level:       level,
+		PackageName: packageName,
+		Data:        v,
+	}
+
+	return instance.Write(&r)
 }
 
-func writeLogsf(level string, packageName string, format string, v ...any) (int, error) {
-	buf := writeDefault(level, packageName)
-	defer bufferPool.Put(buf)
+func writeLogsf(level string, packageName string, format string, v ...any) error {
+	// buf := writeDefault(level, packageName)
+	// defer bufferPool.Put(buf)
 
-	fmt.Fprintf(buf, format, v...)
-	buf.WriteByte('\n')
+	// fmt.Fprintf(buf, format, v...)
+	// buf.WriteByte('\n')
 
-	data := make([]byte, buf.Len())
-	copy(data, buf.Bytes())
+	// data := make([]byte, buf.Len())
+	// copy(data, buf.Bytes())
 
-	return instance.Write(data)
+	r := Record{
+		Time:        time.Now(),
+		Level:       level,
+		PackageName: packageName,
+		Format:      format,
+		Data:        v,
+	}
+
+	return instance.Write(&r)
 }
 
 func writeDefault(level string, packageName string) *bytes.Buffer {
