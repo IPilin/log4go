@@ -57,17 +57,17 @@ func (m *MultiAppender) Close() error {
 	return errs
 }
 
-func appenderFromConfig(ca *AppenderConfig) (Appender, error) {
+func appenderFromConfig(ac *AppenderConfig) (Appender, error) {
 	var appender Appender
-	switch ca.Type {
+	switch ac.Type {
 	case AppenderTypeConsole:
 		appender = &ConsoleAppender{
-			Target: ca.Target,
-			Format: ca.Format,
+			Target: ac.Target,
+			Format: ac.Format,
 		}
 	case AppenderTypeFile:
 	default:
-		return nil, fmt.Errorf("wrong AppenderType: %q", ca.Type)
+		return nil, fmt.Errorf("wrong AppenderType: %q", ac.Type)
 	}
 
 	return appender, nil

@@ -1,4 +1,4 @@
-module github.com/IPilin/log4go
+module github.com/ByDefolt/log4go
 
 go 1.25.0
 

@@ -8,29 +8,6 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-type AppenderType string
-
-const (
-	AppenderTypeConsole AppenderType = "console"
-	AppenderTypeFile    AppenderType = "file"
-)
-
-type OutputFormat string
-
-const (
-	FormatText OutputFormat = "Text"
-	//TODO: make Json formating
-	//FormatJson OutputFormat = "Json"
-)
-
-type Target string
-
-const (
-	TargetStdout Target = "stdout"
-	TargetStderr Target = "stderr"
-	TargetFile   Target = "file"
-)
-
 type AppenderConfig struct {
 	Type   AppenderType `yaml:"type"`
 	Target Target       `yaml:"target"`
