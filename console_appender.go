@@ -6,7 +6,6 @@ import (
 	"io"
 	"os"
 	"sync"
-	"time"
 )
 
 type ConsoleAppender struct {
@@ -35,17 +34,17 @@ func (a *ConsoleAppender) Key() string {
 	return string(a.Target) + string(a.Format)
 }
 
-func writeDefault(level string, packageName string) *bytes.Buffer {
+func writeDefault(r *Record) *bytes.Buffer {
 	buf := bufferPool.Get().(*bytes.Buffer)
 	buf.Reset()
 
-	appendFormatTime(buf, time.Now())
+	appendFormatTime(buf, r.Time)
 	buf.WriteByte(' ')
-	buf.WriteString(level)
+	buf.WriteString(r.Level)
 	buf.WriteByte(' ')
-	if len(packageName) != 0 {
+	if len(r.PackageName) != 0 {
 		buf.WriteByte('[')
-		buf.WriteString(packageName)
+		buf.WriteString(r.PackageName)
 		buf.WriteString("] ")
 	}
 	return buf
@@ -59,7 +58,7 @@ func (a *ConsoleAppender) Write(r *Record) error {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 
-	buf := writeDefault(r.Level, r.PackageName)
+	buf := writeDefault(r)
 	defer bufferPool.Put(buf)
 
 	buf.WriteString(r.Data)

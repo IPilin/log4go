@@ -11,14 +11,22 @@ import (
 
 type appLogger struct {
 	level     atomic.Int32
+	closed    bool
+	mu        sync.RWMutex
 	ma        atomic.Pointer[MultiAppender]
 	logTunnel chan *Record
 	errTunnel chan error
-	stop      chan struct{}
 	wg        sync.WaitGroup
 }
 
 func (a *appLogger) Write(r *Record) error {
+	a.mu.RLock()
+	defer a.mu.RUnlock()
+
+	if a.closed {
+		return errors.New("logger already closed")
+	}
+
 	select {
 	case a.logTunnel <- r:
 		return nil
@@ -67,7 +75,6 @@ var (
 		a.level.Store(int32(InfoLevel))
 		a.logTunnel = make(chan *Record, 1024)
 		a.errTunnel = make(chan error, 100)
-		a.stop = make(chan struct{}, 2)
 
 		a.wg.Add(2)
 		go bootstrapWriter(a)
@@ -86,6 +93,14 @@ var (
 )
 
 func Init(config *LogConfig) error {
+	if instance.closed {
+		return errors.New("logger already closed")
+	}
+
+	if config == nil {
+		return errors.New("config is empty")
+	}
+
 	config, err := initConfig(config)
 	if err != nil {
 		return err
@@ -122,6 +137,7 @@ func Init(config *LogConfig) error {
 	oldMa := instance.ma.Load()
 	instance.ma.Store(ma)
 	instance.level.Store(int32(config.Level))
+	instance.closed = false
 
 	for key, val := range oldMa.Appenders {
 		if _, ok := ma.Appenders[key]; ok {
@@ -134,7 +150,16 @@ func Init(config *LogConfig) error {
 }
 
 func Close() error {
+	instance.mu.Lock()
+	if instance.closed {
+		instance.mu.Unlock()
+		return errors.New("logger already closed")
+	}
+
+	instance.closed = true
 	close(instance.logTunnel)
+	instance.mu.Unlock()
+
 	instance.wg.Wait()
 	return instance.ma.Load().Close()
 }
@@ -151,11 +176,10 @@ func bootstrapWriter(app *appLogger) {
 			select {
 			case app.errTunnel <- err:
 			default:
-				fmt.Fprintf(os.Stderr, "log4go: error tunnel overflow, message dropped: %q", err)
+				fmt.Fprintf(os.Stderr, "log4go: error tunnel overflow, message dropped: %q\n", err)
 			}
 		}
 	}
-
 	close(app.errTunnel)
 }
 
@@ -163,6 +187,6 @@ func bootstrapError(app *appLogger) {
 	defer app.wg.Done()
 
 	for err := range app.errTunnel {
-		fmt.Fprintf(os.Stderr, "log4go: Error - %q", err)
+		fmt.Fprintf(os.Stderr, "log4go: Error - %q\n", err)
 	}
 }
