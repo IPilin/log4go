@@ -26,7 +26,6 @@ type Target string
 const (
 	TargetStdout Target = "stdout"
 	TargetStderr Target = "stderr"
-	TargetFile   Target = "file"
 )
 
 type Appender interface {

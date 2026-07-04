@@ -34,7 +34,7 @@ func (a *ConsoleAppender) Key() string {
 	return string(a.Target) + string(a.Format)
 }
 
-func writeDefault(r *Record) *bytes.Buffer {
+func (a *ConsoleAppender) writeDefault(r *Record) *bytes.Buffer {
 	buf := bufferPool.Get().(*bytes.Buffer)
 	buf.Reset()
 
@@ -58,7 +58,7 @@ func (a *ConsoleAppender) Write(r *Record) error {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 
-	buf := writeDefault(r)
+	buf := a.writeDefault(r)
 	defer bufferPool.Put(buf)
 
 	buf.WriteString(r.Data)

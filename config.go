@@ -1,6 +1,7 @@
 package log4go
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -44,6 +45,9 @@ func initConfig(config *LogConfig) (*LogConfig, error) {
 }
 
 func loadFromFile(config *LogConfig) (*LogConfig, error) {
+	if config == nil {
+		return nil, errors.New("config is nil")
+	}
 	file, err := os.Open(config.ConfigPath)
 	if err != nil {
 		return nil, err
@@ -55,15 +59,12 @@ func loadFromFile(config *LogConfig) (*LogConfig, error) {
 		return nil, err
 	}
 
-	newConfig := &LogConfig{
-		ConfigPath: config.ConfigPath,
-		HotReload:  config.HotReload,
-	}
+	newConfig := *config
 
-	err = yaml.Unmarshal(data, newConfig)
+	err = yaml.Unmarshal(data, &newConfig)
 	if err != nil {
 		return nil, err
 	}
 
-	return newConfig, nil
+	return &newConfig, nil
 }

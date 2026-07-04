@@ -66,6 +66,10 @@ func appenderFromConfig(ac *AppenderConfig) (Appender, error) {
 			Format: ac.Format,
 		}
 	case AppenderTypeFile:
+		appender = &FileAppender{
+			FilePath: ac.Path,
+			Format:   ac.Format,
+		}
 	default:
 		return nil, fmt.Errorf("wrong AppenderType: %q", ac.Type)
 	}

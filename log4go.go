@@ -93,6 +93,9 @@ var (
 )
 
 func Init(config *LogConfig) error {
+	instance.mu.Lock()
+	defer instance.mu.Unlock()
+
 	if instance.closed {
 		return errors.New("logger already closed")
 	}
@@ -137,7 +140,6 @@ func Init(config *LogConfig) error {
 	oldMa := instance.ma.Load()
 	instance.ma.Store(ma)
 	instance.level.Store(int32(config.Level))
-	instance.closed = false
 
 	for key, val := range oldMa.Appenders {
 		if _, ok := ma.Appenders[key]; ok {
